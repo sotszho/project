@@ -5,6 +5,7 @@ date: "2016年9月12日"
 output: html_document
 ---
 edit
+edit2
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
