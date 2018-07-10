@@ -1,0 +1,171 @@
+"""
+Created on Thu Jul  5 11:20:56 2018
+
+@author: timso
+"""
+#%% Directory
+import os
+os.getcwd()
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\Name matching\\data")  
+
+#%%
+""" Libraries """
+import pandas as pd
+import numpy as np
+import pickle
+import re
+from pkg_resources import Requirement, resource_filename
+import csv
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+
+""" Real datasets """
+raw_table = pd.read_csv('sc_txn_fnl_1805.csv')
+test_table = raw_table[['cpty_adj']][0:100]
+
+""" fuzzy string searching """
+
+choices = ["Atlanta Falcons", "New York Jets", "New York Giants", "Dallas Cowboys"]
+process.extract("new york jets", choices, limit=2)
+    [('New York Jets', 100), ('New York Giants', 78)]
+process.extractOne("cowboys", choices)
+    ("Dallas Cowboys", 90)
+
+#%%
+""" datasets for testing """
+
+bank_list = pd.read_csv('bank_list.csv')
+messy_list = pd.read_csv('messy_list.csv')
+
+bank_list.describe
+messy_list.Company
+#%% Data Exploration/cleaning of messy_list
+
+messy_list.describe
+messy_list.columns
+messy_list.head()
+messy_list.isnull()
+messy_list.info()
+
+#Column name
+messy_list['Company'] = messy_list['Company'].astype(str)
+
+"""
+Parsing consists of applying various cleaning techniques. Some examples:
+
+Standardizing lettercase (e.g., all lowercase)
+Standardizing punctuation (e.g., commas must be followed by spaces)
+Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
+Standardizing legal control terms (e.g., converting "Co." to "Company")
+"""
+#case
+bank_list = bank_list.Bank.str.lower()
+messy_list = messy_list.Company.str.lower() # need to study if this can handle NaN?
+
+#strip special characters (",", "." and double spaces)
+messy_list['Company']= messy_list['Company'].str.replace(r"(?<=[.,])(?=[^\s])"," ")
+messy_list['Company']= messy_list['Company'].str.replace(r"\,","")
+messy_list['Company']= messy_list['Company'].str.replace(r"\.","")
+messy_list['Company'] = messy_list['Company'].map(lambda x: x.strip()) # strip spaces
+messy_list['Company']
+
+#accented characters
+    # the below code should work however if there is accented characters in the csv to be read
+    # the file cannot be read using read_csv in the first place; skip for now
+messy_list['Company'] = messy_list['Company'].str.normalize('NFKD')\
+                         .str.encode('ascii', errors='ignore')\
+                         .str.decode('utf-8')
+       
+# Standardizing legal control terms
+# This is just for testing the code; the table is no way exhaustive here;
+# should keep a maintained key table in sas/csv
+
+#https://github.com/psolin/cleanco/blob/master/cleanco.py
+
+from terms import terms_by_type as type_dict
+
+import json
+# Write to file
+json.dump(type_dict,open('test.csv',"w"))
+
+# Load from file
+da = json.load(open('test.csv',"r"))
+
+#%%
+
+def add_drug_mapping(mydict, mapdict, filename):
+    """ This function is used to add drug mappings to 
+        the drug dictionary.  For example, if the term
+        "benadry" is not found in the dictionary, you can
+        add the custom mapping by using the following:
+        drugs.add_drug_mapping({"benadryl":"diphenhydramine"})
+        Additionally, one might want to map all instances of
+        "multi-vitamin" to "vitamin" in which case you would
+        use:
+        drugs.add_drug_mapping({"multi-vitamin":"vitamin"})
+    """
+    mydict = json.load(open(filename,"r"))
+    for k,v in mapdict.items():
+        da[k] = v
+    pickle.dump(da, open(filename, "wb"))
+    print("The dictionary successfully updated...")
+
+add_drug_mapping(da, {"multi-vitamin":"vitamin"}, 'test.csv')
+
+da
+
+#%% String Matching
+
+#Basic 1 - 100% Match
+matched_1=[]
+for i in range(len(messy_list.Company)):
+    matched_1.append('No_matches')
+    for j in range(len(bank_list.Bank)):
+        if messy_list.Company[i] == (bank_list.Bank[j]):
+            matched_1[i] = bank_list.Bank[j]
+            break
+
+messy_list['matched_1'] = matched_1
+
+messy_list
+#Basic 2 - 100% Match + Case insensitive
+matched_2=[]
+for i in range(len(messy_list.Company)):
+    matched_2.append('No_matches')
+    for j in range(len(bank_list.Bank)):
+        if messy_list.Company[i].lower() == bank_list.Bank[j].lower():
+            matched_2[i] = bank_list.Bank[j]
+            break
+matched_2
+messy_list['matched_2'] = matched_2
+messy_list
+
+#Basic 3 - using difflib https://docs.python.org/3.4/library/difflib.html
+
+matched_3=[]
+for i in range(len(messy_list.Company)):
+    matched_3.append('No_matches')
+    matched_3[i] = difflib.get_close_matches(messy_list.Company[i],list(bank_list.Bank), n=1, cutoff=0.1)
+matched_3     
+        
+        
+def correct_bank(row):
+    accepted = lower(list(bank_list.Bank))
+    match = difflib.get_close_matches(row, accepted, n=1, cutoff=0.3)
+    return match[0] if match else ''
+
+messy_list['Expense_match'] = list(messy_list['Company'].apply(correct_bank)
+
+# Basic 4 - using fuzzywuzzy
+
+# Basic 5 - using Jaccard Index
+# https://stackoverflow.com/questions/11911252/python-jaccard-distance-using-word-intersection-but-not-character-intersection
+def DistJaccard(str1, str2):
+    str1 = set(str1.split())
+    str2 = set(str2.split())
+    return float(len(str1 & str2)) / len(str1 | str2)
+
+DistJaccard("DBS Bank Limitedd A", "DBS Bank Limited A")
