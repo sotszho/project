@@ -1,21 +1,22 @@
-"""
-Created on Thu Jul  5 11:20:56 2018
-
-@author: timso
-"""
 #%% Directory
 import os
 os.getcwd()
-os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\Name matching\\data")  
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\Name matching\\data")  
 
 #%%
 """ Libraries """
+# Active
 import pandas as pd
 import numpy as np
+import re
+
+#%%
+# Others
 import pickle
 import re
 from pkg_resources import Requirement, resource_filename
 import csv
+
 
 import jellyfish
 from fuzzywuzzy import fuzz
@@ -36,11 +37,47 @@ process.extractOne("cowboys", choices)
 #%%
 """ datasets for testing """
 
-bank_list = pd.read_csv('bank_list.csv')
-messy_list = pd.read_csv('messy_list.csv')
+# =============================================================================
+# bank_list = pd.read_csv('bank_list.csv')
+# messy_list = pd.read_csv('messy_list.csv')
+# 
+# =============================================================================
 
-bank_list.describe
-messy_list.Company
+bank_list = pd.DataFrame({'bank':[              
+'Bank of Communications',
+'Bank of East Asia',
+'CITIC Bank International',
+'China Construction Bank (Asia)',
+'Chiyu Banking Corporation',
+'Chong Hing Bank',
+'Citibank (Hong Kong)',
+'Dah Sing Bank',
+'DBS Bank (Hong Kong)',
+'Fubon Bank (Hong Kong)',
+'Hang Seng Bank',
+'The Hongkong and Shanghai Banking Corporation',
+'Industrial and Commercial Bank of China (Asia)',
+'Nanyang Commercial Bank',
+'OCBC Wing Hang Bank']})
+
+
+messy_list = pd.DataFrame({'company':[              
+'Chan tai man',
+'CITIC Bank International',
+'',
+'   ',
+'////',
+'abcdefg',
+'12345',
+'Dah Sing',
+'DBS Bank (Hong Kong)',
+'Nothing is here!!!',
+'Hang   Seng Bank.LTD',
+'HSBC, limited',
+np.nan,
+' no data',
+'missing  ']})
+
 #%% Data Exploration/cleaning of messy_list
 
 messy_list.describe
@@ -49,44 +86,223 @@ messy_list.head()
 messy_list.isnull()
 messy_list.info()
 
-#Column name
-messy_list['Company'] = messy_list['Company'].astype(str)
+#%% Exploring the datasets
 
+#bank_list
+bank_list.head()
+
+#messy_list'
+messy_list.head()
+messy_list.info()
+messy_list.columns
+messy_list["company"][1]
+
+messy_list.isnull()
+
+# Check type for each element
+for col in messy_list:
+    print(messy_list[col].apply(type))
+
+#%% Parsing
 """
-Parsing consists of applying various cleaning techniques. Some examples:
+Parsing consists of applying various cleaning techniques
 
-Standardizing lettercase (e.g., all lowercase)
-Standardizing punctuation (e.g., commas must be followed by spaces)
-Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
-Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
-Standardizing legal control terms (e.g., converting "Co." to "Company")
+1. standardize datatype and NAs
+    a. convert datatype to str
+    b. stripping the white spaces and standardizing lettercase to lowercase
+    c. convert different 'NA' expressions to np.NaN
+
+2. Standardizing punctuation (e.g., commas must be followed by spaces)
+3. Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+4. Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
+5. Check if string contains alphabets; if no, convert to NaN
+6. Standardizing legal control terms (e.g., converting "Co." to "Company")
 """
-#case
-bank_list = bank_list.Bank.str.lower()
-messy_list = messy_list.Company.str.lower() # need to study if this can handle NaN?
 
+# Checking type for each element
+for col in messy_list_c:
+    print(messy_list_c[col].apply(type))
+
+#%% Parsing 1
+"""
+1. standardize datatype and NAs
+    a. convert datatype to str
+    b. stripping the white spaces and standardizing lettercase to lowercase
+    c. convert different 'NA' expressions to np.NaN
+"""
+# Set str as the default datatype
+
+messy_list_c = messy_list.copy()
+messy_list_c['company'] = messy_list_c['company'].astype(str)
+
+# stripping the white spaces and standardizing lettercase to lowercase
+messy_list_c.company = messy_list_c.company.str.strip().str.lower()
+
+# converting different 'NA' expressions to np.NaN
+messy_list_c = messy_list_c.replace(['nan', 'missing', 'n/a', 'no data'], np.nan)
+
+
+# End step: convert 'nan' to NaN
+messy_list_c = messy_list_c.replace('nan', np.NaN)
+messy_list_c['company'].isna()
+
+#%%
+"""
+2. Standardizing punctuation
+    a. commas/dots must be followed by spaces
+    b. delete punctuation (only dots and commas here first)
+"""
 #strip special characters (",", "." and double spaces)
-messy_list['Company']= messy_list['Company'].str.replace(r"(?<=[.,])(?=[^\s])"," ")
-messy_list['Company']= messy_list['Company'].str.replace(r"\,","")
-messy_list['Company']= messy_list['Company'].str.replace(r"\.","")
-messy_list['Company'] = messy_list['Company'].map(lambda x: x.strip()) # strip spaces
-messy_list['Company']
 
-#accented characters
+messy_list_c['company']= messy_list_c['company'].str.replace(r"(?<=[.,])(?=[^\s])"," ") # add space if none after . or ,
+messy_list_c['company']= messy_list_c['company'].str.replace(r"\,","") # remove commas
+messy_list_c['company']= messy_list_c['company'].str.replace(r"\.","") # remove dots
+messy_list_c
+
+#%%
+"""
+3. Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+"""
+#df.Name = df.Name.replace('\s+', ' ', regex=True)
+messy_list_c['company']= messy_list_c['company'].str.replace("\s+", " ")
+
+#%%
+"""
+4. Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
+"""
     # the below code should work however if there is accented characters in the csv to be read
     # the file cannot be read using read_csv in the first place; skip for now
 messy_list['Company'] = messy_list['Company'].str.normalize('NFKD')\
                          .str.encode('ascii', errors='ignore')\
                          .str.decode('utf-8')
-       
+                         
+# ref: https://stackoverflow.com/questions/38969383/fuzzy-string-matching-in-python
+
+#%%
+"""
+5. Check if string contains alphabets; if no, convert to NaN
+"""
+#test_df = messy_list_c.copy()
+
+def contain_alphabet(x):
+    try:
+        letters=re.search('[a-z]', x)
+        letters[0].isalpha()
+        return x
+    except:
+        return np.nan
+
+messy_list_c['company'] = messy_list_c['company'].map(lambda x: contain_alphabet(x))
+
+
+# drill on letters=re.search('[a-z]', x) vs letters = re.search('[a-zA-Z]+', item)
+    
+#%%       
 # Standardizing legal control terms
 # This is just for testing the code; the table is no way exhaustive here;
 # should keep a maintained key table in sas/csv
 
 #https://github.com/psolin/cleanco/blob/master/cleanco.py
 
-from terms import terms_by_type as type_dict
+"""
+Basic - hard code the dictionary
+"""
+#https://stackoverflow.com/questions/49008179/how-to-replace-column-values-with-dictionary-keys-in-pandas
 
+terms_by_type = {
+   'corporation': ['incorporated', 'coporation', 'corp', 'inc'],
+   'limited': ['ltd', 'llc', 'lltd']}
+
+terms_by_type = {
+   'corporation': "incorporated, coporation, corp, inc",
+   'limited': "ltd,llc,lltd"}
+
+d = {k: oldk for oldk, oldv in terms_by_type.items() for k in oldv.split(',')}
+
+test_df = messy_list_c.copy()
+
+messy_list_c['company'] = messy_list_c['company'].replace(d, regex=True)
+messy_list_c
+
+#%% String Matching
+"""
+Basic 1 - 100% Match
+"""
+matched_1=[]
+for i in range(len(messy_list_c.company)):
+    matched_1.append('No_matches')
+    for j in range(len(bank_list.bank)):
+        if messy_list_c.company[i] == bank_list.bank[j].lower():
+            matched_1[i] = bank_list.bank[j]
+            break
+matched_1
+
+messy_list_c['matching'] = matched_1
+
+"""
+Basic 2 - 100% match disregarding word order
+ - use package or not?
+ 
+"""
+matched_2=[]
+for i in range(len(messy_list_c.company)):
+    matched_2.append('No_matches')
+    for j in range(len(bank_list.bank)):
+        if (messy_list_c.company[i].lower().split()) == (bank_list.bank[j].lower().split()):
+            matched_2[i] = bank_list.bank[j]
+            break
+
+messy_list['matching_2'] = matched_2
+
+"""
+Others
+https://www.joyofdata.de/blog/comparison-of-string-distance-algorithms/
+
+a SAS paper on fuzzy matching
+http://support.sas.com/resources/papers/proceedings17/0881-2017.pdf
+
+ngrams
+http://chappers.github.io/web%20micro%20log/2015/04/29/comparison-of-ngram-fuzzy-matching-approaches/
+"""
+
+# Ngrams - qgrams
+def ngram(text, n=3, pad=True):
+    text = text.strip()
+    if pad:
+        text = " %s " % text
+    return set([text[i:i+n] for i in range(len(text)-n+1)])
+    
+def create_ngram(text1, text2, n=3, pad=True):
+    return ngram(text1, n=n, pad=pad), ngram(text2, n=n, pad=pad) 
+
+def qgrams(text1, text2, q=3, pad=True):
+    text1, text2 = create_ngram(text1, text2, n=q, pad=pad)
+    return len(text1.intersection(text2))
+
+# qgrams counts the numbers of components which match
+qgrams("abcde", "abdcde", q=2, pad=False) # 3
+
+#%% using tokens
+# ref: https://stackoverflow.com/questions/12821201/what-are-ngram-counts-and-how-to-implement-using-nltk
+
+import nltk
+nltk.download('punkt')
+from nltk import bigrams
+from nltk import trigrams
+
+text="""I am a boy. Jenny is a girl. Jenny does not like to make friends with boys"""
+# split the texts into tokens
+tokens = nltk.word_tokenize(text)
+tokens = [token.lower() for token in tokens if len(token) > 1] #same as unigrams
+bi_tokens = bigrams(tokens)
+tri_tokens = trigrams(tokens)
+
+# print trigrams count
+tri_tokens =list(tri_tokens)
+print([(item, tri_tokens.count(item)) for item in sorted(set(tri_tokens))])
+
+#%% write out to csv and load 
+from terms import terms_by_type as type_dict
 import json
 # Write to file
 json.dump(type_dict,open('test.csv',"w"))
@@ -121,10 +337,10 @@ da
 
 #Basic 1 - 100% Match
 matched_1=[]
-for i in range(len(messy_list.Company)):
+for i in range(len(messy_list_c.Company)):
     matched_1.append('No_matches')
-    for j in range(len(bank_list.Bank)):
-        if messy_list.Company[i] == (bank_list.Bank[j]):
+    for j in range(len(bank_list.bank)):
+        if messy_list_c.Company[i] == bank_list.Bank[j].lower(): # no lower() on messy_list_c as it is pre-possessed
             matched_1[i] = bank_list.Bank[j]
             break
 
