@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jul  5 11:20:56 2018
+
+@author: timso
+"""
 #%% Directory
 import os
 os.getcwd()
@@ -8,7 +14,12 @@ os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\Name matching\\data")
 # Active
 import pandas as pd
 import numpy as np
+import string
 import re
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
 
 #%%
 # Others
@@ -17,10 +28,6 @@ import re
 from pkg_resources import Requirement, resource_filename
 import csv
 
-
-import jellyfish
-from fuzzywuzzy import fuzz
-from fuzzywuzzy import process
 
 """ Real datasets """
 raw_table = pd.read_csv('sc_txn_fnl_1805.csv')
@@ -69,7 +76,7 @@ messy_list = pd.DataFrame({'company':[
 '////',
 'abcdefg',
 '12345',
-'Dah Sing',
+'Bank Dah Sing',
 'DBS Bank (Hong Kong)',
 'Nothing is here!!!',
 'Hang   Seng Bank.LTD',
@@ -155,8 +162,11 @@ messy_list_c['company'].isna()
 #strip special characters (",", "." and double spaces)
 
 messy_list_c['company']= messy_list_c['company'].str.replace(r"(?<=[.,])(?=[^\s])"," ") # add space if none after . or ,
-messy_list_c['company']= messy_list_c['company'].str.replace(r"\,","") # remove commas
-messy_list_c['company']= messy_list_c['company'].str.replace(r"\.","") # remove dots
+#messy_list_c['company']= messy_list_c['company'].str.replace(r"\,","") # remove commas
+#messy_list_c['company']= messy_list_c['company'].str.replace(r"\.","") # remove dots
+for c in string.punctuation:
+    messy_list_c['company']= messy_list_c['company'].str.replace(c,"")
+    
 messy_list_c
 
 #%%
@@ -182,7 +192,7 @@ messy_list['Company'] = messy_list['Company'].str.normalize('NFKD')\
 """
 5. Check if string contains alphabets; if no, convert to NaN
 """
-#test_df = messy_list_c.copy()
+test_df = messy_list_c.copy()
 
 def contain_alphabet(x):
     try:
@@ -192,8 +202,11 @@ def contain_alphabet(x):
     except:
         return np.nan
 
-messy_list_c['company'] = messy_list_c['company'].map(lambda x: contain_alphabet(x))
+test_df['company'] = test_df['company'].map(lambda x: contain_alphabet(x))
+test_df
 
+messy_list_c['company'] = messy_list_c['company'].map(lambda x: contain_alphabet(x))
+messy_list_c
 
 # drill on letters=re.search('[a-z]', x) vs letters = re.search('[a-zA-Z]+', item)
     
@@ -248,11 +261,87 @@ matched_2=[]
 for i in range(len(messy_list_c.company)):
     matched_2.append('No_matches')
     for j in range(len(bank_list.bank)):
-        if (messy_list_c.company[i].lower().split()) == (bank_list.bank[j].lower().split()):
-            matched_2[i] = bank_list.bank[j]
+        try:
+            if set(messy_list_c.company[i].lower().split()) == set(bank_list.bank[j].lower().split()):
+                matched_2[i] = bank_list.bank[j]
+                break
+        except:
             break
 
+matched_2   
+
 messy_list['matching_2'] = matched_2
+
+"""
+Basic 3 - Phonetic algoithms followed by simple string match
+"""
+
+# create a metaphone equivalent to both lists
+bank_keys=list(bank_list) # this lists all the keys in the dictionary all_eth. Use the same keys for all_eth_metaphone
+bank_list_metaphone={}
+for i in bank_keys:
+    bank_list_metaphone[i] = bank_list[i]
+    for j in range(len(bank_list_metaphone[i])):
+        bank_list_metaphone[i][j] = jellyfish.metaphone(bank_list_metaphone[i][j])
+
+bank_list_metaphone['bank']
+
+# 
+messy_list_metaphone = []
+for i in range(len(messy_list_c)):
+    print(i)
+    print(messy_list_c[i])
+    messy_list_metaphone.append('others')
+    try:
+        messy_list_metaphone[i] = jellyfish.metaphone(messy_list_c[i])
+    except:
+        break
+    
+messy_list_metaphone
+
+    
+invnames =  list(inv_data_long.last_name)
+
+for i in range(len(invnames)):
+    invnames[i] = invnames[i].replace(" ", "")
+    
+    
+inv_ethnicity=[]
+k = 0
+for lname in invnames:
+    metaphone_lname = jellyfish.metaphone(lname)
+    inv_ethnicity.append('Other')
+    for i in eth_keys:
+        if metaphone_lname in list(all_eth_metaphone[i]):
+            inv_ethnicity[k]=i
+            break
+    k=k+1
+
+
+
+
+
+
+
+        
+matched_3=[]
+
+# basic 3 testing
+test1 = list(bank_list)
+all_eth_metaphone={}
+for i in test1:
+    all_eth_metaphone[i] = bank_list[i]
+    for j in range(len(all_eth_metaphone[i])):
+        all_eth_metaphone[i][j] = jellyfish.metaphone(all_eth_metaphone[i][j])
+
+for i in eth_keys:
+    all_eth_metaphone[i] = all_eth[i]
+    for j in range(len(all_eth_metaphone[i])):
+        all_eth_metaphone[i][j] = jellyfish.metaphone(all_eth_metaphone[i][j])
+# =============================================================================
+# messy_list_c.company[7] vs
+ #   messy_list_c.company[7].lower().split()) == (bank_list.bank[j].lower().split()
+# =============================================================================
 
 """
 Others
@@ -263,9 +352,14 @@ http://support.sas.com/resources/papers/proceedings17/0881-2017.pdf
 
 ngrams
 http://chappers.github.io/web%20micro%20log/2015/04/29/comparison-of-ngram-fuzzy-matching-approaches/
+
+more on tokens
+https://www.codediesel.com/nodejs/fuzzy-string-matching-in-nodejs/
 """
 
 # Ngrams - qgrams
+test_text = 'I am a boy'
+
 def ngram(text, n=3, pad=True):
     text = text.strip()
     if pad:
