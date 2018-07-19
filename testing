@@ -250,7 +250,7 @@ for i in range(len(messy_list_c.company)):
             break
 matched_1
 
-messy_list_c['matching'] = matched_1
+#messy_list_c['matching'] = matched_1
 
 """
 Basic 2 - 100% match disregarding word order
@@ -270,78 +270,255 @@ for i in range(len(messy_list_c.company)):
 
 matched_2   
 
-messy_list['matching_2'] = matched_2
-
+#messy_list_c['matching_2'] = matched_2
+#%%
 """
 Basic 3 - Phonetic algoithms followed by simple string match
 """
+# for bank list
+bank_list_metaphone = []
+for i in range(len(bank_list)):
+    bank_list_metaphone.append('others')
+for i in range(len(bank_list)):
+    try:
+        bank_list_metaphone[i] = jellyfish.metaphone(bank_list['bank'][i])
+    except:
+        pass
 
-# create a metaphone equivalent to both lists
-bank_keys=list(bank_list) # this lists all the keys in the dictionary all_eth. Use the same keys for all_eth_metaphone
-bank_list_metaphone={}
-for i in bank_keys:
-    bank_list_metaphone[i] = bank_list[i]
-    for j in range(len(bank_list_metaphone[i])):
-        bank_list_metaphone[i][j] = jellyfish.metaphone(bank_list_metaphone[i][j])
+bank_list_metaphone
 
-bank_list_metaphone['bank']
-
-# 
+# for messy list
 messy_list_metaphone = []
 for i in range(len(messy_list_c)):
-    print(i)
-    print(messy_list_c[i])
     messy_list_metaphone.append('others')
+for i in range(len(messy_list_c)):
     try:
-        messy_list_metaphone[i] = jellyfish.metaphone(messy_list_c[i])
+        messy_list_metaphone[i] = jellyfish.metaphone(messy_list_c['company'][i])
     except:
-        break
-    
+        pass
+
 messy_list_metaphone
 
-    
-invnames =  list(inv_data_long.last_name)
+"""
+Basic 3_1 - Phonetic algoithms followed by 100% match
+"""
 
-for i in range(len(invnames)):
-    invnames[i] = invnames[i].replace(" ", "")
-    
-    
-inv_ethnicity=[]
-k = 0
-for lname in invnames:
-    metaphone_lname = jellyfish.metaphone(lname)
-    inv_ethnicity.append('Other')
-    for i in eth_keys:
-        if metaphone_lname in list(all_eth_metaphone[i]):
-            inv_ethnicity[k]=i
-            break
-    k=k+1
-
-
-
-
-
-
-
-        
 matched_3=[]
+for i in range(len(messy_list_metaphone)):
+    matched_3.append('No_matches')
+    for j in range(len(bank_list_metaphone)):
+        try:
+            if jellyfish.metaphone(messy_list_c.company[i]) == jellyfish.metaphone(bank_list.bank[j].lower()):
+                matched_3[i] = bank_list.bank[j]
+        except:
+            pass
+matched_3
 
-# basic 3 testing
-test1 = list(bank_list)
-all_eth_metaphone={}
-for i in test1:
-    all_eth_metaphone[i] = bank_list[i]
-    for j in range(len(all_eth_metaphone[i])):
-        all_eth_metaphone[i][j] = jellyfish.metaphone(all_eth_metaphone[i][j])
+"""
+Basic 3_2 - Phonetic algoithms followed by 100% match ignoring word order
+"""
 
-for i in eth_keys:
-    all_eth_metaphone[i] = all_eth[i]
-    for j in range(len(all_eth_metaphone[i])):
-        all_eth_metaphone[i][j] = jellyfish.metaphone(all_eth_metaphone[i][j])
-# =============================================================================
-# messy_list_c.company[7] vs
- #   messy_list_c.company[7].lower().split()) == (bank_list.bank[j].lower().split()
-# =============================================================================
+matched_3_2=[]
+for i in range(len(messy_list_metaphone)):
+    matched_3_2.append('No_matches')
+    for j in range(len(bank_list_metaphone)):
+        try:
+            if set(jellyfish.metaphone(messy_list_c.company[i])) == set(jellyfish.metaphone(bank_list.bank[j].lower())):
+                matched_3_2[i] = bank_list.bank[j]
+        except:
+            pass
+matched_3_2
+
+#%%
+"""
+Identify stop_words such as "Limited" "Bank" 
+
+"""
+from collections import Counter
+
+def stop_words(word_list):
+
+    counts = Counter(word_list)
+    stop_list =[];
+    new_word_list=[]
+    freq=[]
+
+    for key in counts:
+        new_word_list.append(key)
+        freq.append(counts[key]/float(sum(counts.values())))
+
+    for i in range(len(freq)):
+        if freq[i] > np.percentile(freq,75):
+            stop_list.append(new_word_list[i])
+
+    return (new_word_list, stop_list)
+
+def stop_words(word_list, percent):
+
+    counts = Counter(word_list)
+    stop_list =[];
+    new_word_list=[]
+    freq=[]
+
+    for key in counts:
+        new_word_list.append(key)
+        freq.append(counts[key]/float(sum(counts.values())))
+
+    for i in range(len(freq)):
+        if freq[i] > np.percentile(freq,percent):
+            stop_list.append(new_word_list[i])
+
+    return (new_word_list, stop_list)
+
+stop_words(['apple', 'orange', 'durian', 'orange'])
+
+stop_words(" ".join(list(bank_list.bank)).split(), 70)
+
+stop_words(" ".join(list(messy_list_c.company.dropna())).split(), 70)
+
+
+#%%
+
+"""
+Basic 4 - Edit distance
+
+The edit distance between two strings S and R is defined to be the minimum
+number of character inserts, deletes and changes needed to convert R to S. Given
+a text string t of length n, and a pattern string p of length m, informally, the string
+edit distance matching problem is to compute the smallest edit distance between p
+and substrings of t
+"""
+
+"""
+formula/ calculation
+Output as integer number of edits
+Can also be normalized to give a similarity value by the formula
+
+1 - (edit distance / length of the larger of the two strings)
+"""
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from difflib import SequenceMatcher
+
+choices = ["Atlanta Falcons", "New York Jets", "New York Giants", "Dallas Cowboys"]
+process.extract("new york jets", choices, limit=2)
+
+#%%
+# Ref: https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
+"""
+I. String Similarity
+using sequencematcher
+
+Return a measure of the sequences' similarity as a float in the range [0, 1]. 
+Where T is the total number of elements in both sequences, and  M is the number of matches, 
+this is 2.0*M / T.
+"""
+
+m = SequenceMatcher(None, "NEW YORK METS", "NEW YORK MEATS") # class difflib.SequenceMatcher(isjunk=None, a='', b='', autojunk=True)
+m.ratio()
+"""
+In this case, T=13+14 = 27; M=13; therefore 26/27 = 0.962962962963
+"""
+"""
+encapsulate it with Fuzzywuzzy
+"""
+
+fuzz.ratio("NEW YORK METS", "NEW YORK MEATS")  #96
+"""
+This standard “string closeness” measurement works fine for very short strings (such as a single word)
+and long strings (such as a full book), but not so much for 3-10 word labels. 
+The naive approach is far too sensitive to minor differences in word order, 
+missing or extra words, and other such issues.
+"""
+#%%
+
+"""
+II. Partial String Similarity
+"""
+fuzz.ratio("YANKEES", "NEW YORK YANKEES") #61
+fuzz.ratio("NEW YORK METS", "NEW YORK YANKEES") #76
+
+"""
+This is very related to the case where we match 
+1. DAH SING vs DAH SING BANK LIMITED HK
+2. DBS BANK LIMITED HK vs DAH SING BANK LIMITED HK
+
+To get around it, we use a heuristic we call “best partial” 
+when two strings are of noticeably different lengths (such as the case above). 
+If the shorter string is length m, and the longer string is length n, 
+we’re basically interested in the score of the best matching length-m substring.
+
+fuzz.ratio("YANKEES", "NEW YOR") ⇒ 14
+fuzz.ratio("YANKEES", "EW YORK") ⇒ 28
+fuzz.ratio("YANKEES", "W YORK ") ⇒ 28
+fuzz.ratio("YANKEES", " YORK Y") ⇒ 28
+...
+fuzz.ratio("YANKEES", "YANKEES") ⇒ 100
+
+"""
+fuzz.partial_ratio("YANKEES", "NEW YORK YANKEES") #100
+fuzz.partial_ratio("NEW YORK METS", "NEW YORK YANKEES") #69
+
+#%%
+
+"""
+III. Out of order -> Token Sort/ Token Set
+"""
+fuzz.ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+fuzz.partial_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+"""
+Substrings aren’t our only problem. We also have to deal with differences in string construction. 
+Here is an extremely common pattern, 
+    where one seller constructs strings as “<HOME_TEAM> vs <AWAY_TEAM>” 
+    and another constructs strings as “<AWAY_TEAM> vs <HOME_TEAM>”
+"""
+fuzz.token_sort_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+fuzz.token_set_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+#Difference beween token_sort and token_set
+fuzz.token_sort_ratio("mariners vs angels", "los angeles angels of anaheim at seattle mariners")
+fuzz.token_set_ratio("mariners vs angels", "los angeles angels of anaheim at seattle mariners")
+
+"""
+Detailed calculation
+1. token_sort_ratio
+ step 1 - token and reorder both strings
+         t1 - "a am boy I"
+         t2 - "a am girl good I noted"
+         
+ step 2 - compare using simple ratio
+"""
+t1 = "I am a boy"
+t2 = "I am a Noted that good girl"
+fuzz.token_sort_ratio(t1, t2)
+fuzz.ratio("a am boy I", "a am girl good I noted that")
+"""
+2. token_set_ratio
+    text_1 - "I am a boy"
+    text_2 - "Noted that I am a good girl"
+ step 1 - t0 = "I am a"
+          t1 = "I am a boy"
+          t2 = "I am a Noted that good girl"
+          fuzz.ratio(t0, t1) ⇒ 90
+          fuzz.ratio(t0, t2) ⇒ 46
+          fuzz.ratio(t1, t2) ⇒ 50
+"""
+t0 = "I am a"
+t1 = "I am a boy"
+t2 = "I am a Noted that good girl"
+fuzz.ratio(t0, t1) 75
+fuzz.ratio(t0, t2) 36
+fuzz.ratio(t1, t2) 43
+
+fuzz.token_set_ratio(t1, t2)
+
+#%%
+# try to apply and seems a bit problematic even using token_set_ratio
+fuzz.token_set_ratio("DBS BANK LIMITED HK", "DAH BANK LIMITED HK")
+fuzz.token_set_ratio("DBS BANK LIMITED HK", "DAH BANK LIIMTED HK")
+#%%
 
 """
 Others
@@ -394,6 +571,10 @@ tri_tokens = trigrams(tokens)
 # print trigrams count
 tri_tokens =list(tri_tokens)
 print([(item, tri_tokens.count(item)) for item in sorted(set(tri_tokens))])
+
+#%%
+from nltk.corpus import brown
+brown.words()
 
 #%% write out to csv and load 
 from terms import terms_by_type as type_dict
@@ -479,3 +660,7 @@ def DistJaccard(str1, str2):
     return float(len(str1 & str2)) / len(str1 | str2)
 
 DistJaccard("DBS Bank Limitedd A", "DBS Bank Limited A")
+
+#%% other references
+#http://users.cecs.anu.edu.au/~Peter.Christen/publications/tr-cs-06-02.pdf
+#http://users.cecs.anu.edu.au/~Peter.Christen/publications/tr-cs-06-02.pdf
