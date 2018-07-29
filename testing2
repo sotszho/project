@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 30 06:26:26 2018
+
+@author: tszhoso
+"""
+
+#%% Directory
+import os
+os.getcwd()
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\Name matching\\data")  
+
+#%%
+""" Libraries """
+# Active
+import pandas as pd
+import numpy as np
+import string
+import re
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from collections import Counter # for stop_words()
+
+import nltk
+#nltk.download('punkt')
+from nltk import bigrams
+from nltk import trigrams
+
+#%% Parsing
+"""
+1. standardize datatype and NAs
+    a. convert datatype to str
+    b. stripping the white spaces and standardizing lettercase to lowercase
+    c. convert different 'NA' expressions to np.NaN
+    d. unctuation
+
+2. Standardizing punctuation (e.g., commas must be followed by spaces)
+3. Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+4. Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
+5. Check if string contains alphabets; if no, convert to NaN
+6. Standardizing legal control terms (e.g., converting "Co." to "Company")
+"""
+class match:
+    def format_standardize(input_list):
+        input_list = input_list.astype(str)
+        input_list = input_list.str.strip().str.lower()
+        input_list = input_list.str.replace("\s+", " ")
+        input_list = input_list.replace(['nan', 'missing', 'n/a', 'no data', 'not available'], np.nan)
+        input_list = input_list.str.replace(r"(?<=[.,])(?=[^\s])"," ") # commas/dots must be followed by space
+        for c in string.punctuation:
+            input_list = input_list.str.replace(c,"")
+        return input_list
+    
+    #format_standardize(pd.Series(['abc', 'ddd.ltd']))
+    
+    def _contain_alphabet(word):
+        try:
+            letters=re.search('[a-z]', word)
+            letters[0].isalpha()
+            return word
+        except:
+            return np.nan
+        
+    def missing_alphabet(input_list):
+        output_list = input_list.map(lambda x: _contain_alphabet(x))
+        return output_list
+    
+    def suffix_standardize(input_list):
+        output_list = input_list.replace(com_suffix_inverse, regex=True)
+        return output_list
+
+    terms_by_type = {
+                    'corporation': ' incorporated, corporation, corp , inc ',
+                    'limited': 'ltd, llc, lltd'} #Problematic
+    
+    com_suffix_inverse = {k: oldk for oldk, oldv in terms_by_type.items() for k in oldv.split(',')}
+
+
+    def standardize(input_list):
+        list1 = format_standardize(input_list)
+        list2 = missing_alphabet(list1)
+        output_list = suffix_standardize(list2)
+        return output_list
+
+class match:
+#Basic 1 - 100% match
+    def full_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                if input_list[i] == key_list[j]:
+                    match_list[i] = clean_key[j]
+        return match_list
+
+#%%
+"""
+Basic 2.1 - 100% match; ignoring word order
+"""
+
+    def full_sort_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if sorted(input_list[i].lower().split()) == sorted(key_list[j].split()):
+                        match_list[i] = clean_key[j]
+                except: pass
+        return match_list
+    
+    #%%
+    """
+    Basic 2.2 - 100% match; ignoring word order; use set() so word inside string is tokenized
+    """
+    
+    def full_set_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if set(input_list[i].lower().split()) == set(key_list[j].split()):
+                        match_list[i] = clean_key[j]
+                except: pass
+        return match_list
+    
+    #%%
+    """
+    Basic 3.1 - Phonetic algorithms followed by simple string match
+    """
+    
+    def phonetic_convert(input_list):
+        metaphone_list = []
+        for i in range(len(input_list)):
+            metaphone_list.append('others')
+            for i in range(len(input_list)):
+                try:
+                    matephone_list[i] = jellyfish.metaphone(input_list[i])
+                except:
+                    pass
+        return metaphone_list
+    
+    
+    
+    def phonetic_full_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if jellyfish.metaphone(input_list[i]) == jellyfish.metaphone(key_list[j]):
+                       match_list[i] = clean_key[j]
+                except: pass
+        return match_list   
+    
+    #%%
+    """
+    Basic 3.2 - Phonetic algorithms followed by full set match
+    """
+    def phonetic_set_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if set(jellyfish.metaphone(input_list[i]).split()) == set(jellyfish.metaphone(key_list[j]).split()):
+                       match_list[i] = clean_key[j]
+                except: pass
+        return match_list  
+    
+    #%% 
+    """
+    Basic 4 - fuzz.token_sort_ratio with score flexibility
+    """
+    
+    def fuzzy_match(input_list, key_list, clean_key, min_ratio=90):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            try:
+                matches = process.extractOne(input_list[i], list(key_list), scorer=fuzz.token_sort_ratio)
+                if matches[1] >= min_ratio:
+                   match_list[i] = matches[0]
+            except: pass
+        return match_list   
+
+#%% Compact
+    
+def match(method, input_list, key_list, clean_key, min_ratio=90)
+    
