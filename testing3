@@ -1,0 +1,657 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jul 29 16:05:27 2018
+
+@author: tszhoso
+
+String Matching Code for DBS 
+Develop .py to match string between
+    a. messy_list
+    b. key_list
+
+Note:
+     
+"""
+
+#%% Directory
+import os
+os.getcwd()
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\Name matching\\data")  
+
+#%%
+""" Libraries """
+# Active
+import pandas as pd
+import numpy as np
+import string
+import re
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from collections import Counter # for stop_words()
+
+import nltk
+#nltk.download('punkt')
+from nltk import bigrams
+from nltk import trigrams
+
+#%%
+""" datasets for testing """
+
+# =============================================================================
+# bank_list = pd.read_csv('bank_list.csv')
+# messy_list = pd.read_csv('messy_list.csv')
+# 
+# =============================================================================
+
+# Create dataset in program for easy testing
+bank_list = pd.DataFrame({'bank':[              
+'Bank of Communications',
+'Bank of East Asia',
+'CITIC Bank International',
+'China Construction Bank (Asia)',
+'Chiyu Banking Corporation',
+'Chong Hing Bank',
+'Citibank (Hong Kong)',
+'Dah Sing Bank',
+'DBS Bank (Hong Kong)',
+'Fubon Bank (Hong Kong)',
+'Hang Seng Bank',
+'The Hongkong and Shanghai Banking Corporation',
+'Industrial and Commercial Bank of China (Asia)',
+'Nanyang Commercial Bank',
+'OCBC Wing Hang Bank']})
+
+
+messy_list = pd.DataFrame({'company':[              
+'Chan tai man',
+'CITIC Bank International',
+'',
+'   ',
+'////',
+'abcdefg',
+'12345',
+'Bank Dah Sing',
+'DBS Bank (Hong Kong)',
+'Nothing is here!!!',
+'Hang   Seng Bank.LTD',
+'HSBC, limited',
+np.nan,
+' no data',
+'missing  ',
+'Lanyang commercial bank',
+'Banking Corporation']})
+
+#%% Data Exploration/cleaning of messy_list
+
+messy_list.describe
+messy_list.columns
+messy_list.head()
+messy_list.isnull()
+messy_list.info()
+
+#%% Exploring the datasets
+
+#bank_list
+bank_list.head()
+
+#messy_list'
+messy_list.head()
+messy_list.info()
+messy_list.columns
+messy_list["company"][1]
+
+messy_list.isnull()
+
+# Check type for each element
+for col in messy_list:
+    print(messy_list[col].apply(type))
+
+#%% Parsing
+"""
+1. standardize datatype and NAs
+    a. convert datatype to str
+    b. stripping the white spaces and standardizing lettercase to lowercase
+    c. convert different 'NA' expressions to np.NaN
+    d. unctuation
+
+2. Standardizing punctuation (e.g., commas must be followed by spaces)
+3. Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+4. Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents)
+5. Check if string contains alphabets; if no, convert to NaN
+6. Standardizing legal control terms (e.g., converting "Co." to "Company")
+"""
+
+def format_standardize(input_list):
+    input_list = input_list.astype(str)
+    input_list = input_list.str.strip().str.lower()
+    input_list = input_list.str.replace("\s+", " ")
+    input_list = input_list.replace(['nan', 'missing', 'n/a', 'no data', 'not available'], np.nan)
+    input_list = input_list.str.replace(r"(?<=[.,])(?=[^\s])"," ") # commas/dots must be followed by space
+    for c in string.punctuation:
+        input_list = input_list.str.replace(c,"")
+    return input_list
+
+#format_standardize(pd.Series(['abc', 'ddd.ltd']))
+
+def _contain_alphabet(word):
+    try:
+        letters=re.search('[a-z]', word)
+        letters[0].isalpha()
+        return word
+    except:
+        return np.nan
+    
+def missing_alphabet(input_list):
+    output_list = input_list.map(lambda x: _contain_alphabet(x))
+    return output_list
+
+terms_by_type = {
+                'corporation': ' incorporated, corporation, corp , inc ',
+                'limited': 'ltd, llc, lltd'} #Problematic
+
+com_suffix_inverse = {k: oldk for oldk, oldv in terms_by_type.items() for k in oldv.split(',')}
+
+def suffix_standardize(input_list):
+    output_list = input_list.replace(com_suffix_inverse, regex=True)
+    return output_list
+
+def standardize(input_list):
+    list1 = format_standardize(input_list)
+    list2 = missing_alphabet(list1)
+    output_list = suffix_standardize(list2)
+    return output_list
+
+#%% standardize the bank_list.bank and company_list.company
+
+messy_list
+
+messy_list['company_c'] = standardize(messy_list.company)
+
+bank_list['bank_c'] = standardize(bank_list.bank)
+
+#%% String Matching
+"""
+Basic 1 - 100% match
+"""
+def full_match(input_list, key_list, clean_key):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        for j in range(len(key_list)):
+            if input_list[i] == key_list[j]:
+                match_list[i] = clean_key[j]
+    return match_list
+
+full_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+messy_list['full_match'] = full_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+#%%
+"""
+Basic 2.1 - 100% match; ignoring word order
+"""
+
+def full_sort_match(input_list, key_list, clean_key):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        for j in range(len(key_list)):
+            try:
+                if sorted(input_list[i].lower().split()) == sorted(key_list[j].split()):
+                    match_list[i] = clean_key[j]
+            except: pass
+    return match_list
+
+full_sort_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+messy_list['full_sort_match'] = full_sort_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+
+#%%
+"""
+Basic 2.2 - 100% match; ignoring word order; use set() so word inside string is tokenized
+"""
+
+def full_set_match(input_list, key_list, clean_key):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        for j in range(len(key_list)):
+            try:
+                if set(input_list[i].lower().split()) == set(key_list[j].split()):
+                    match_list[i] = clean_key[j]
+            except: pass
+    return match_list
+
+full_set_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+messy_list['full_set_match'] = full_set_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+#%%
+"""
+Basic 3.1 - Phonetic algorithms followed by simple string match
+"""
+
+def phonetic_convert(input_list):
+    metaphone_list = []
+    for i in range(len(input_list)):
+        metaphone_list.append('others')
+        for i in range(len(input_list)):
+            try:
+                matephone_list[i] = jellyfish.metaphone(input_list[i])
+            except:
+                pass
+    return metaphone_list
+
+
+
+def phonetic_full_match(input_list, key_list, clean_key):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        for j in range(len(key_list)):
+            try:
+                if jellyfish.metaphone(input_list[i]) == jellyfish.metaphone(key_list[j]):
+                   match_list[i] = clean_key[j]
+            except: pass
+    return match_list   
+
+messy_list['phonetic_full_match'] = phonetic_full_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+#%%
+"""
+Basic 3.2 - Phonetic algorithms followed by full set match
+"""
+def phonetic_set_match(input_list, key_list, clean_key):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        for j in range(len(key_list)):
+            try:
+                if set(jellyfish.metaphone(input_list[i]).split()) == set(jellyfish.metaphone(key_list[j]).split()):
+                   match_list[i] = clean_key[j]
+            except: pass
+    return match_list  
+
+messy_list['phonetic_set_match'] = phonetic_set_match(messy_list.company_c, bank_list.bank_c, bank_list.bank)
+
+
+#%% 
+"""
+Basic 4 - fuzz.token_set_ratio with score flexibility
+"""
+
+def fuzzy_match(input_list, key_list, clean_key, min_ratio=90):
+    match_list = []
+    for i in range(len(input_list)):
+        match_list.append('No_matches')
+        try:
+            matches = process.extractOne(input_list[i], list(key_list), scorer=fuzz.token_sort_ratio)
+            if matches[1] >= min_ratio:
+               match_list[i] = matches[0]
+        except: pass
+    return match_list   
+
+
+fuzzy_match(messy_list.company_c, bank_list.bank_c, bank_list.bank,60)
+
+messy_list['fuzzy_match'] = fuzzy_match(messy_list.company_c, bank_list.bank_c, bank_list.bank,60)
+
+"""
+Notes in using fuzz ratios
+1. Problem with fuzz.token_set_ratio
+problematic in using fuzz.token_set_ratio in our case, consider
+fuzz.token_set_ratio('abc hk limited', 'hk')
+
+"""
+fuzz.token_set_ratio('abc hk limited', 'hk')
+
+#%% define a ompact Match function
+
+
+#%% Use fuzzywuzzy for further relexing the matching 
+"""
+This part is a quick review of using fuzz ratios; for details, refers to the bottom code cell
+
+"""
+# ratio = 2M/T
+#too sensitive to minor differences, e.g. word order, missing/extra words..
+fuzz.ratio("YANKEES", "NEW YORK YANKEES") #61
+fuzz.ratio("NEW YORK METS", "NEW YORK YANKEES") #76
+
+# socre of the best matching shorter-length substring
+fuzz.partial_ratio("YANKEES", "NEW YORK YANKEES") #100
+fuzz.partial_ratio("NEW YORK METS", "NEW YORK YANKEES") #==> ratio("NEW YORK METS", "NEW YORK YANK")=> #69
+
+#step 1: reorder and tokenize
+#step 2: fuzz.ratio()
+fuzz.token_sort_ratio("YANKEES", "NEW YORK YANKEES") #61
+fuzz.token_sort_ratio("NEW YORK METS", "NEW YORK YANKEES") #62
+
+"""
+2. token_set_ratio
+
+split the tokens into two groups: intersection and remainder
+ step 1 - t0 = "a boy"
+          t1 = "a boy am I"
+          t2 = "a boy bad is me to"
+"""
+t0 = "a boy"
+t1 = "a boy am I"
+t2 = "a boy bad is me to"
+fuzz.ratio(t0, t1)
+fuzz.ratio(t0, t2)
+fuzz.ratio(t1, t2)
+
+fuzz.token_set_ratio("I am a boy", "a boy is bad to me")
+
+fuzz.token_set_ratio('abc hk limited', 'hk')
+
+#%%
+"""
+Break between models and performance measures
+"""
+
+#%% Performance measure
+"""
+x: recall rate
+y: precision rate
+"""
+
+#%%
+"""
+End Break
+"""
+
+
+#%%
+
+"""
+Basic 4 - Edit distance
+
+The edit distance between two strings S and R is defined to be the minimum
+number of character inserts, deletes and changes needed to convert R to S. Given
+a text string t of length n, and a pattern string p of length m, informally, the string
+edit distance matching problem is to compute the smallest edit distance between p
+and substrings of t
+"""
+
+"""
+formula/ calculation
+Output as integer number of edits
+Can also be normalized to give a similarity value by the formula
+
+1 - (edit distance / length of the larger of the two strings)
+"""
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from difflib import SequenceMatcher
+
+choices = ["Atlanta Falcons", "New York Jets", "New York Giants", "Dallas Cowboys"]
+process.extract("new york jets", choices, limit=2)
+
+#%%
+# Ref: https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
+"""
+I. String Similarity
+using sequencematcher
+
+Return a measure of the sequences' similarity as a float in the range [0, 1]. 
+Where T is the total number of elements in both sequences, and  M is the number of matches, 
+this is 2.0*M / T.
+"""
+
+m = SequenceMatcher(None, "NEW YORK METS", "NEW YORK MEATS") # class difflib.SequenceMatcher(isjunk=None, a='', b='', autojunk=True)
+m.ratio()
+"""
+In this case, T=13+14 = 27; M=13; therefore 26/27 = 0.962962962963
+"""
+"""
+encapsulate it with Fuzzywuzzy
+"""
+
+fuzz.ratio("NEW YORK METS", "NEW YORK MEATS")  #96
+"""
+This standard “string closeness” measurement works fine for very short strings (such as a single word)
+and long strings (such as a full book), but not so much for 3-10 word labels. 
+The naive approach is far too sensitive to minor differences in word order, 
+missing or extra words, and other such issues.
+"""
+#%%
+
+"""
+II. Partial String Similarity
+"""
+fuzz.ratio("YANKEES", "NEW YORK YANKEES") #61
+fuzz.ratio("NEW YORK METS", "NEW YORK YANKEES") #76
+
+"""
+This is very related to the case where we match 
+1. DAH SING vs DAH SING BANK LIMITED HK
+2. DBS BANK LIMITED HK vs DAH SING BANK LIMITED HK
+
+To get around it, we use a heuristic we call “best partial” 
+when two strings are of noticeably different lengths (such as the case above). 
+If the shorter string is length m, and the longer string is length n, 
+we’re basically interested in the score of the best matching length-m substring.
+
+fuzz.ratio("YANKEES", "NEW YOR") ⇒ 14
+fuzz.ratio("YANKEES", "EW YORK") ⇒ 28
+fuzz.ratio("YANKEES", "W YORK ") ⇒ 28
+fuzz.ratio("YANKEES", " YORK Y") ⇒ 28
+...
+fuzz.ratio("YANKEES", "YANKEES") ⇒ 100
+
+"""
+fuzz.partial_ratio("YANKEES", "NEW YORK YANKEES") #100
+fuzz.partial_ratio("NEW YORK METS", "NEW YORK YANKEES") #69
+
+#%%
+
+"""
+III. Out of order -> Token Sort/ Token Set
+"""
+fuzz.ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+fuzz.partial_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+"""
+Substrings aren’t our only problem. We also have to deal with differences in string construction. 
+Here is an extremely common pattern, 
+    where one seller constructs strings as “<HOME_TEAM> vs <AWAY_TEAM>” 
+    and another constructs strings as “<AWAY_TEAM> vs <HOME_TEAM>”
+"""
+fuzz.token_sort_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+fuzz.token_set_ratio("New York Mets vs Atlanta Braves", "Atlanta Braves vs New York Mets")
+
+#Difference beween token_sort and token_set
+fuzz.token_sort_ratio("mariners vs angels", "los angeles angels of anaheim at seattle mariners")
+fuzz.token_set_ratio("mariners vs angels", "los angeles angels of anaheim at seattle mariners")
+
+"""
+Detailed calculation
+1. token_sort_ratio
+ step 1 - token and reorder both strings
+         t1 - "a am boy I"
+         t2 - "a am girl good I noted"
+         
+ step 2 - compare using simple ratio
+"""
+t1 = "I am a boy"
+t2 = "I am a Noted that good girl"
+fuzz.token_sort_ratio(t1, t2)
+fuzz.ratio("a am boy I", "a am girl good I noted that")
+"""
+2. token_set_ratio
+    text_1 - "I am a boy"
+    text_2 - "Noted that I am a good girl"
+ step 1 - t0 = "I am a"
+          t1 = "I am a boy"
+          t2 = "I am a Noted that good girl"
+          fuzz.ratio(t0, t1) ⇒ 90
+          fuzz.ratio(t0, t2) ⇒ 46
+          fuzz.ratio(t1, t2) ⇒ 50
+"""
+t0 = "I am a"
+t1 = "I am a boy"
+t2 = "I am a Noted that good girl"
+fuzz.ratio(t0, t1) 75
+fuzz.ratio(t0, t2) 36
+fuzz.ratio(t1, t2) 43
+
+fuzz.token_set_ratio(t1, t2)
+
+#%%
+# try to apply and seems a bit problematic even using token_set_ratio
+fuzz.token_set_ratio("DBS BANK LIMITED HK", "DAH BANK LIMITED HK")
+fuzz.token_set_ratio("DBS BANK LIMITED HK", "DAH BANK LIIMTED HK")
+#%%
+
+"""
+Others
+https://www.joyofdata.de/blog/comparison-of-string-distance-algorithms/
+
+a SAS paper on fuzzy matching
+http://support.sas.com/resources/papers/proceedings17/0881-2017.pdf
+
+ngrams
+http://chappers.github.io/web%20micro%20log/2015/04/29/comparison-of-ngram-fuzzy-matching-approaches/
+
+more on tokens
+https://www.codediesel.com/nodejs/fuzzy-string-matching-in-nodejs/
+"""
+
+# Ngrams - qgrams
+test_text = 'I am a boy'
+
+def ngram(text, n=3, pad=True):
+    text = text.strip()
+    if pad:
+        text = " %s " % text
+    return set([text[i:i+n] for i in range(len(text)-n+1)])
+    
+def create_ngram(text1, text2, n=3, pad=True):
+    return ngram(text1, n=n, pad=pad), ngram(text2, n=n, pad=pad) 
+
+def qgrams(text1, text2, q=3, pad=True):
+    text1, text2 = create_ngram(text1, text2, n=q, pad=pad)
+    return len(text1.intersection(text2))
+
+# qgrams counts the numbers of components which match
+qgrams("abcde", "abdcde", q=2, pad=False) # 3
+
+#%% using tokens
+# ref: https://stackoverflow.com/questions/12821201/what-are-ngram-counts-and-how-to-implement-using-nltk
+
+import nltk
+nltk.download('punkt')
+from nltk import bigrams
+from nltk import trigrams
+
+text="""I am a boy. Jenny is a girl. Jenny does not like to make friends with boys"""
+# split the texts into tokens
+tokens = nltk.word_tokenize(text)
+tokens = [token.lower() for token in tokens if len(token) > 1] #same as unigrams
+bi_tokens = bigrams(tokens)
+tri_tokens = trigrams(tokens)
+
+# print trigrams count
+tri_tokens =list(tri_tokens)
+print([(item, tri_tokens.count(item)) for item in sorted(set(tri_tokens))])
+
+#%%
+from nltk.corpus import brown
+brown.words()
+
+#%% write out to csv and load 
+from terms import terms_by_type as type_dict
+import json
+# Write to file
+json.dump(type_dict,open('test.csv',"w"))
+
+# Load from file
+da = json.load(open('test.csv',"r"))
+
+#%%
+
+def add_drug_mapping(mydict, mapdict, filename):
+    """ This function is used to add drug mappings to 
+        the drug dictionary.  For example, if the term
+        "benadry" is not found in the dictionary, you can
+        add the custom mapping by using the following:
+        drugs.add_drug_mapping({"benadryl":"diphenhydramine"})
+        Additionally, one might want to map all instances of
+        "multi-vitamin" to "vitamin" in which case you would
+        use:
+        drugs.add_drug_mapping({"multi-vitamin":"vitamin"})
+    """
+    mydict = json.load(open(filename,"r"))
+    for k,v in mapdict.items():
+        da[k] = v
+    pickle.dump(da, open(filename, "wb"))
+    print("The dictionary successfully updated...")
+
+add_drug_mapping(da, {"multi-vitamin":"vitamin"}, 'test.csv')
+
+da
+
+#%% String Matching
+
+#Basic 1 - 100% Match
+matched_1=[]
+for i in range(len(messy_list_c.Company)):
+    matched_1.append('No_matches')
+    for j in range(len(bank_list.bank)):
+        if messy_list_c.Company[i] == bank_list.Bank[j].lower(): # no lower() on messy_list_c as it is pre-possessed
+            matched_1[i] = bank_list.Bank[j]
+            break
+
+messy_list['matched_1'] = matched_1
+
+messy_list
+#Basic 2 - 100% Match + Case insensitive
+matched_2=[]
+for i in range(len(messy_list.Company)):
+    matched_2.append('No_matches')
+    for j in range(len(bank_list.Bank)):
+        if messy_list.Company[i].lower() == bank_list.Bank[j].lower():
+            matched_2[i] = bank_list.Bank[j]
+            break
+matched_2
+messy_list['matched_2'] = matched_2
+messy_list
+
+#Basic 3 - using difflib https://docs.python.org/3.4/library/difflib.html
+
+matched_3=[]
+for i in range(len(messy_list.Company)):
+    matched_3.append('No_matches')
+    matched_3[i] = difflib.get_close_matches(messy_list.Company[i],list(bank_list.Bank), n=1, cutoff=0.1)
+matched_3     
+        
+        
+def correct_bank(row):
+    accepted = lower(list(bank_list.Bank))
+    match = difflib.get_close_matches(row, accepted, n=1, cutoff=0.3)
+    return match[0] if match else ''
+
+messy_list['Expense_match'] = list(messy_list['Company'].apply(correct_bank)
+
+# Basic 4 - using fuzzywuzzy
+
+# Basic 5 - using Jaccard Index
+# https://stackoverflow.com/questions/11911252/python-jaccard-distance-using-word-intersection-but-not-character-intersection
+def DistJaccard(str1, str2):
+    str1 = set(str1.split())
+    str2 = set(str2.split())
+    return float(len(str1 & str2)) / len(str1 | str2)
+
+DistJaccard("DBS Bank Limitedd A", "DBS Bank Limited A")
+
+#%% other references
+#http://users.cecs.anu.edu.au/~Peter.Christen/publications/tr-cs-06-02.pdf
+#http://users.cecs.anu.edu.au/~Peter.Christen/publications/tr-cs-06-02.pdf
+
