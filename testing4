@@ -1,0 +1,316 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 30 09:21:30 2018
+
+@author: timso
+"""
+#%% Summary
+"""    
+standardize(input_list)
+
+match.full_match(input_list, key_list, clean_key)
+match.full_sort_match(input_list, key_list, clean_key)
+match.full_set_match(input_list, key_list, clean_key)
+match.phonetic_full_match(input_list, key_list, clean_key)
+match.phonetic_set_match(input_list, key_list, clean_key)
+match.fuzzy_match(input_list, key_list, clean_key, min_ratio=90)
+
+"""
+#%% Directory
+import os
+os.getcwd()
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\Name matching\\data")  
+
+#%%
+""" Libraries """
+# Active
+import pandas as pd
+import numpy as np
+import string
+import re
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from collections import Counter # for stop_words()
+
+import nltk
+#nltk.download('punkt')
+from nltk import bigrams
+from nltk import trigrams
+
+#%% Parsing
+"""
+1. standardize datatype and NAs
+    a. convert datatype to str
+    b. stripping the white spaces and standardizing lettercase to lowercase
+    c. convert different 'NA' expressions to np.NaN
+    d. punctuation
+2. Standardizing punctuation (e.g., commas must be followed by spaces)
+3. Standardizing whitespace (e.g., converting all runs of whitespace to single spaces)
+4. Standardizing accented and special characters (e.g., converting accented letters to ASCII equivalents) (On hold)
+5. Check if string contains alphabets; if no, convert to NaN
+6. Standardizing legal control terms (e.g., converting "Co." to "Company")
+"""
+
+def format_standardize(input_list):
+    input_list = input_list.astype(str)
+    input_list = input_list.str.strip().str.lower()
+    input_list = input_list.str.replace("\s+", " ")
+    input_list = input_list.replace(['nan', 'missing', 'n/a', 'no data', 'not available'], np.nan)
+    input_list = input_list.str.replace(r"(?<=[.,])(?=[^\s])"," ") # commas/dots must be followed by space
+    for c in string.punctuation:
+        input_list = input_list.str.replace(c,"")
+    return input_list
+    
+def _contain_alphabet(word):
+    try:
+        letters=re.search('[a-z]', word)
+        letters[0].isalpha()
+        return word
+    except:
+        return np.nan
+    
+def missing_alphabet(input_list):
+    output_list = input_list.map(lambda x: _contain_alphabet(x))
+    return output_list
+
+suffix_dict = {'corporation': ['incorporated', 'corp'],
+             'limited': ['ltd', 'lltd', 'llc'],
+             'international': ['intl'],
+             'management': ['mgmt', 'mgt'],
+             'hong kong': ['hk', 'hongkong']}
+
+def suffix_standardize(input_list):
+    for j in range(len(input_list)):
+        try:
+            for word, initial in suffix_dict.items():
+                for i in initial:
+                    input_list[j] = re.sub(r"\b"+ re.escape(i) + r"\b", word, input_list[j])
+        except:pass
+    return input_list
+
+
+def standardize(input_list):
+    list1 = format_standardize(input_list)
+    list2 = missing_alphabet(list1)
+    output_list = suffix_standardize(list2)
+    return output_list
+    
+class match:
+#Basic 1 - 100% match
+    def full_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                if input_list[i] == key_list[j]:
+                    match_list[i] = clean_key[j]
+        return match_list
+    
+#Basic 2 - 100% match; ignoring word order
+    def full_sort_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if sorted(input_list[i].lower().split()) == sorted(key_list[j].split()):
+                        match_list[i] = clean_key[j]
+                except: pass
+        return match_list
+
+#100% match; ignoring word order; use set() so word inside string is tokenized    
+    
+    def full_set_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if set(input_list[i].lower().split()) == set(key_list[j].split()):
+                        match_list[i] = clean_key[j]
+                except: pass
+        return match_list
+
+#Basic 3.1 - Phonetic algorithms followed by simple string match
+    
+    def phonetic_convert(input_list):
+        metaphone_list = []
+        for i in range(len(input_list)):
+            metaphone_list.append('others')
+            for i in range(len(input_list)):
+                try:
+                    metaphone_list[i] = jellyfish.metaphone(input_list[i])
+                except:
+                    pass
+        return metaphone_list
+       
+    def phonetic_full_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if jellyfish.metaphone(input_list[i]) == jellyfish.metaphone(key_list[j]):
+                       match_list[i] = clean_key[j]
+                except: pass
+        return match_list   
+    
+#Basic 3.2 - Phonetic algorithms followed by full set match
+
+    def phonetic_set_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if set(jellyfish.metaphone(input_list[i]).split()) == set(jellyfish.metaphone(key_list[j]).split()):
+                       match_list[i] = clean_key[j]
+                except: pass
+        return match_list  
+    
+    #%% 
+    """
+    Basic 4 - fuzz.token_sort_ratio with score flexibility
+    """
+    
+    def fuzzy_match(input_list, key_list, clean_key, min_ratio=90):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            try:
+                matches = process.extractOne(input_list[i], list(key_list), scorer=fuzz.token_sort_ratio)
+                if matches[1] >= min_ratio:
+                   match_list[i] = matches[0]
+            except: pass
+        return match_list   
+
+
+#%%
+""" datasets for testing """
+
+bank_list = pd.DataFrame({'bank':[              
+'Bank of Communications',
+'Bank of East Asia',
+'CITIC Bank International',
+'China Construction Bank (Asia)',
+'Chiyu Banking Corporation',
+'Chong Hing Bank',
+'Citibank (Hong Kong)',
+'Dah Sing Bank',
+'DBS Bank (Hong Kong)',
+'Fubon Bank (Hong Kong)',
+'Hang Seng Bank',
+'The Hongkong and Shanghai Banking Corporation',
+'Industrial and Commercial Bank of China (Asia)',
+'Nanyang Commercial Bank',
+'OCBC Wing Hang Bank']})
+
+
+messy_list = pd.DataFrame({'company':[              
+'Chan tai man',
+'CITIC Bank International',
+'',
+'   ',
+'////',
+'abcdefg',
+'12345',
+'Bank Dah Sing',
+'DBS Bank (Hong Kong)',
+'Nothing is here!!!',
+'Hang   Seng Bank.LTD',
+'HSBC, limited',
+np.nan,
+' no data',
+'missing  ',
+'Lanyang commercial bank',
+'Banking Corporation']})
+    
+#%% Compact function
+    
+def  compact_match(input_df, input_list, key_list, mf):
+     input_cleaned = standardize(input_list)
+     key_cleaned = standardize(key_list)
+     input_df['match_result'] = mf(input_cleaned, key_cleaned, key_list)
+
+#%% Examples
+     
+compact_match(messy_list.company, bank_list.bank, match.full_match)
+
+messy_list
+
+#%% Running on real data - insurance
+
+#Read insurance company list
+xl = pd.ExcelFile("Brokers and Insurers list.xlsx")
+xl.sheet_names
+in_brokers = xl.parse('Insurance Brokers',header=None, names=['company'])
+in_co = xl.parse('Insurance Companies',header=None, names=['company'])
+
+in_co = pd.concat([in_co, in_brokers],ignore_index=True)
+
+in_co.info()
+in_co.head()
+
+#Read messy list
+raw_table = pd.read_csv('sc_txn_fnl_1805.csv', usecols=[7])
+
+messy_list=pd.DataFrame()
+messy_list['company'] = pd.Series(raw_table['cpty_adj'].dropna().unique())[0:1000]
+
+#%%
+"""
+Messy list to match - messy_list['cpty_adj'] 
+key list - in_co['company']
+"""
+#Standard Parsing/Standardize
+messy_list['company_c'] = standardize(messy_list['company'])
+in_co['company_c'] = standardize(in_co['company'])
+
+#list specific parsing
+messy_list['company_c'] = messy_list['company_c'].str.replace('\d+', '').str.strip()
+
+
+#%%
+"""
+1. Filter rows with "ltd" in messy list for easy inspection
+2. Drop "ltd" from both lists
+"""
+filter_list = ['llc', 'ltd']
+esc_lst = [re.escape(s) for s in lst]
+pattern = '|'.join(filter_list)
+df[col].str.contains(pattern, case=False)
+
+messy_list = messy_list[messy_list['company_c'].str.contains(pattern, case=False, na=False)]
+
+
+
+#Matching
+input_list = messy_list['company_c']
+key_list = in_co['company_c']
+clean_key = in_co['company']
+
+messy_list['full_match'] = match.full_match(input_list, key_list, clean_key)
+messy_list['full_sort_match'] = match.full_sort_match(input_list, key_list, clean_key)
+messy_list['full_set_match'] = match.full_set_match(input_list, key_list, clean_key)
+messy_list['phonetic_full_match'] = match.phonetic_full_match(input_list, key_list, clean_key)
+messy_list['phonetic_set_match'] = match.phonetic_set_match(input_list, key_list, clean_key)
+messy_list['fuzzy_match'] = match.fuzzy_match(input_list, key_list, clean_key, min_ratio=50)
+#%% Further testing
+
+list1 = pd.Series(['abc ltd','tony corporation', 'sally llc'])
+suffix_standardize(list1)
+
+
+dict1 = {'corporation': ['incorporated', 'corp'],
+             'limited': ['ltd', 'llc']}
+
+address = "hk ltd corporation"
+
+for word, initial in dict1.items():
+    for i in initial:
+        #address = address.replace(i.lower(), word)
+        address = re.sub(r"\b"+ re.escape(i) + r"\b", word, address)
+print(address)
+
