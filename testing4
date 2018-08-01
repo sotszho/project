@@ -34,6 +34,8 @@ from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 from collections import Counter # for stop_words()
 
+#%% Inactive
+
 import nltk
 #nltk.download('punkt')
 from nltk import bigrams
@@ -53,14 +55,24 @@ from nltk import trigrams
 6. Standardizing legal control terms (e.g., converting "Co." to "Company")
 """
 
+#%%
+suffix_dict = {'inc': ['incorporated', 'incorporation'],
+               'corp': ['corporate', 'corporation'],
+             'ltd': ['lltd', 'llc', 'limited'],
+             'intl': ['international', 'int l'],
+             'mgmt': ['mgt', 'management'],
+             'hk': ['hong kong', 'hongkong', ' h k ']}
+
+#%%
 def format_standardize(input_list):
     input_list = input_list.astype(str)
     input_list = input_list.str.strip().str.lower()
-    input_list = input_list.str.replace("\s+", " ")
+    input_list = input_list.str.replace("&", " and ")
     input_list = input_list.replace(['nan', 'missing', 'n/a', 'no data', 'not available'], np.nan)
     input_list = input_list.str.replace(r"(?<=[.,])(?=[^\s])"," ") # commas/dots must be followed by space
     for c in string.punctuation:
         input_list = input_list.str.replace(c,"")
+    input_list = input_list.str.replace("\s+", " ")
     return input_list
     
 def _contain_alphabet(word):
@@ -75,21 +87,14 @@ def missing_alphabet(input_list):
     output_list = input_list.map(lambda x: _contain_alphabet(x))
     return output_list
 
-suffix_dict = {'corporation': ['incorporated', 'corp'],
-             'limited': ['ltd', 'lltd', 'llc'],
-             'international': ['intl'],
-             'management': ['mgmt', 'mgt'],
-             'hong kong': ['hk', 'hongkong']}
-
 def suffix_standardize(input_list):
     for j in range(len(input_list)):
         try:
             for word, initial in suffix_dict.items():
                 for i in initial:
-                    input_list[j] = re.sub(r"\b"+ re.escape(i) + r"\b", word, input_list[j])
+                    input_list[j] = re.sub(r"\b"+ re.escape(i) + r"\b", word, input_list[j]) #using \b for full string instead of substring
         except:pass
     return input_list
-
 
 def standardize(input_list):
     list1 = format_standardize(input_list)
@@ -108,7 +113,7 @@ class match:
                     match_list[i] = clean_key[j]
         return match_list
     
-#Basic 2 - 100% match; ignoring word order
+#Basic 2.1 - 100% match; ignoring word order
     def full_sort_match(input_list, key_list, clean_key):
         match_list = []
         for i in range(len(input_list)):
@@ -120,7 +125,7 @@ class match:
                 except: pass
         return match_list
 
-#100% match; ignoring word order; use set() so word inside string is tokenized    
+#Basic 2.2 - 100% match; ignoring word order; use set() so word inside string is tokenized    
     
     def full_set_match(input_list, key_list, clean_key):
         match_list = []
@@ -133,6 +138,16 @@ class match:
                 except: pass
         return match_list
 
+    def subset_match(input_list, key_list, clean_key):
+        match_list = []
+        for i in range(len(input_list)):
+            match_list.append('No_matches')
+            for j in range(len(key_list)):
+                try:
+                    if set(key_list[j].lower().split()).issubset(set(input_list[i].split())):
+                        match_list[i] = clean_key[j]
+                except: pass
+        return match_list
 #Basic 3.1 - Phonetic algorithms followed by simple string match
     
     def phonetic_convert(input_list):
@@ -170,10 +185,7 @@ class match:
                 except: pass
         return match_list  
     
-    #%% 
-    """
-    Basic 4 - fuzz.token_sort_ratio with score flexibility
-    """
+#Basic 4 - fuzz.token_sort_ratio with score flexibility
     
     def fuzzy_match(input_list, key_list, clean_key, min_ratio=90):
         match_list = []
@@ -186,7 +198,13 @@ class match:
             except: pass
         return match_list   
 
-
+#%% Compact function
+    
+def  compact_match(input_df, input_list, key_list, method):
+     input_cleaned = standardize(input_list)
+     key_cleaned = standardize(key_list)
+     input_df['match_result'] = method(input_cleaned, key_cleaned, key_list)
+     
 #%%
 """ datasets for testing """
 
@@ -227,18 +245,11 @@ np.nan,
 'Lanyang commercial bank',
 'Banking Corporation']})
     
-#%% Compact function
-    
-def  compact_match(input_df, input_list, key_list, mf):
-     input_cleaned = standardize(input_list)
-     key_cleaned = standardize(key_list)
-     input_df['match_result'] = mf(input_cleaned, key_cleaned, key_list)
-
 #%% Examples
      
-compact_match(messy_list.company, bank_list.bank, match.full_match)
-
-messy_list
+#compact_match(messy_list.company, bank_list.bank, match.full_match)
+#
+#messy_list
 
 #%% Running on real data - insurance
 
@@ -257,37 +268,54 @@ in_co.head()
 raw_table = pd.read_csv('sc_txn_fnl_1805.csv', usecols=[7])
 
 messy_list=pd.DataFrame()
-messy_list['company'] = pd.Series(raw_table['cpty_adj'].dropna().unique())[0:1000]
+messy_list['party'] = pd.Series(raw_table['cpty_adj'].dropna().unique())[0:50000]
+
+
+"""
+In total 280172 unique non-null rows
+take 50001 rows for checking
+"""
 
 #%%
 """
-Messy list to match - messy_list['cpty_adj'] 
+Messy list to match - messy_list['party'] 
 key list - in_co['company']
 """
 #Standard Parsing/Standardize
-messy_list['company_c'] = standardize(messy_list['company'])
+
+messy_list['party_c'] = standardize(messy_list['party'])
 in_co['company_c'] = standardize(in_co['company'])
 
 #list specific parsing
-messy_list['company_c'] = messy_list['company_c'].str.replace('\d+', '').str.strip()
-
+messy_list['party_c'] = messy_list['party_c'].str.replace('\d+', '')
+#.str.strip()
+messy_list['party_c'] = messy_list['party_c'].str.replace("\s+", " ")
 
 #%%
 """
-1. Filter rows with "ltd" in messy list for easy inspection
-2. Drop "ltd" from both lists
+=filter messy_list for easy inspection
+    - party contains "ltd"
+    - >= 2 word
+    - > no number
 """
-filter_list = ['llc', 'ltd']
-esc_lst = [re.escape(s) for s in lst]
-pattern = '|'.join(filter_list)
-df[col].str.contains(pattern, case=False)
+messy_list_full = messy_list.copy()
 
-messy_list = messy_list[messy_list['company_c'].str.contains(pattern, case=False, na=False)]
+messy_list = messy_list[messy_list['party_c'].str.contains('ltd', na=False)].copy()
+messy_list = messy_list[messy_list['party_c'].str.contains(' ', na=False)].copy()
+messy_list['party_c'] = messy_list['party_c'].str.replace('ltd', '')
 
+messy_list['party_c'] = messy_list['party_c'].str.strip()
+messy_list = messy_list.reset_index(drop=True)
 
+in_co['company_c'] = in_co['company_c'].str.replace('ltd', '')
+in_co['company_c'] = in_co['company_c'].str.strip()
 
+"""
+In total 18986 rows
+"""
+#%%
 #Matching
-input_list = messy_list['company_c']
+input_list = messy_list['party_c']
 key_list = in_co['company_c']
 clean_key = in_co['company']
 
@@ -296,7 +324,19 @@ messy_list['full_sort_match'] = match.full_sort_match(input_list, key_list, clea
 messy_list['full_set_match'] = match.full_set_match(input_list, key_list, clean_key)
 messy_list['phonetic_full_match'] = match.phonetic_full_match(input_list, key_list, clean_key)
 messy_list['phonetic_set_match'] = match.phonetic_set_match(input_list, key_list, clean_key)
-messy_list['fuzzy_match'] = match.fuzzy_match(input_list, key_list, clean_key, min_ratio=50)
+messy_list['fuzzy_match'] = match.fuzzy_match(input_list, key_list, clean_key, min_ratio=80)
+
+messy_list['subset_match'] = match.full_set_match(input_list, key_list, clean_key)
+
+#%%
+"""
+Result
+"""
+result_df = messy_list.loc[(messy_list[['fuzzy_match']] != 'No_matches').any(axis=1)].copy()
+
+# export
+result_df.to_csv('result_df.csv')
+messy_list.to_csv('messy_list_result.csv')
 #%% Further testing
 
 list1 = pd.Series(['abc ltd','tony corporation', 'sally llc'])
@@ -313,4 +353,5 @@ for word, initial in dict1.items():
         #address = address.replace(i.lower(), word)
         address = re.sub(r"\b"+ re.escape(i) + r"\b", word, address)
 print(address)
+
 
