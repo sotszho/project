@@ -1,0 +1,250 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug  2 15:09:59 2018
+
+@author: timso
+"""
+
+#%% Directory
+import os
+os.getcwd()
+os.chdir("C:\\Users\\timso\\Documents\\003 Tasks\\1807\\DVC cust profile study\\data")  
+
+# Libraries
+""" Libraries """
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+#%% Import DVC output data
+
+#### I. Import dvc_cus data; various variables included by merging dataset in SAS
+
+dvc = pd.read_csv('DVC_CUS_T2.csv')
+dvc.rename({'DT-TOTAL IDEAL ENQUIRIES':'ideal_enquiries', 
+            'DT-TOTAL DIGITAL FINANCIAL':'dt_financial',
+            'NDT-BIZCARE':'ndt_bizcare',
+            'NDT-TOTAL NONDIGITAL FINANCIAL':'ndt_financial'
+            }, axis='columns', inplace=True)
+
+dvc['TAGGING'].replace([0,1], ['Traditional','Digital'],inplace=True)
+dvc['NCA'].replace([0,1],['Non_NCA','NCA'],inplace=True)
+
+list(dvc)
+
+#%% Data exploring
+
+dvc.info()
+dvc.head()
+dvc.shape
+
+# Drop records where borrowing2 = 0 or null
+dvc1 = dvc[dvc["borrowing2"].isin([1,2])]
+dvc1.shape
+
+"""
+#alternatively
+dvc1 = dvc[dvc["borrowing2"]!= 0]
+dvc1 = dvc[dvc["borrowing2"].notull()]
+"""
+
+#Cross check
+dvc1["borrowing2"].unique()
+dvc1["Team_BU"].unique()
+
+dvc["borrowing2"].unique()
+dvc["Team_BU"].unique()
+#%%
+"""
+Get no. of rows with null data
+"""
+len(dvc1.index)
+len(dvc1.index)-dvc1.count()
+
+#%%
+"""
+-Check if duplicate rows exist
+-Check if KPI_Cust_Id_2 has "Total"
+"""
+dvc1[dvc1.duplicated()] 
+    # Duplicate CIN in the same month
+dvc1[dvc1.duplicated(['KPI_Cust_Id_2'])] 
+dvc1[dvc1.duplicated(['KPI_Cust_Id_2', 'KPI_Booking'])] 
+
+# Find rows with abnormal data
+dvc1[dvc1.KPI_Cust_Id_2 == 'Total']
+    # Thus delete rows with CIN = 'Total'
+#digital = digital.drop(digital[digital.CIN == 'Total'].index)
+
+#%%
+"""
+Null checking shows there are rows without Team_BU data; get those rows
+Tim: cleared after applying the first borrowing2 filter
+"""
+
+#dvc1[dvc1['Team_BU'].isnull()]
+#dvc1[dvc1['borrowing2'].isnull()]
+
+#%%
+"""
+Visualization
+Part 1. Customers demographics
+Part 2. Digital vs Traditional
+"""
+
+#%%
+"""
+Part 1. Cust demographics
+"""
+dvc1['borrowing2'].value_counts().plot(kind='bar')
+dvc1['Team_BU'].value_counts().plot(kind='bar')
+dvc1['NCA'].value_counts().plot(kind='bar')
+dvc1['Meta Industry'].value_counts().plot(kind='bar')
+dvc1['industry_description'].value_counts()[:10].plot(kind='bar')
+dvc1['CUST_RISK_RATING'].value_counts().plot(kind='bar')
+
+dvc1[dvc1['COUNTRY_OF_INCORP'].notnull()]['COUNTRY_OF_INCORP'].value_counts()[:10].plot(kind='bar')
+dvc1[dvc1['code_description'].notnull()]['code_description'].value_counts()[:10].plot(kind='bar')
+
+dvc1[dvc1['yrs_of_est'].notnull()]['yrs_of_est'].value_counts()[:10].plot(kind='bar')
+
+#Digital vs Traditional
+dvc1['TAGGING'].value_counts().plot(kind='bar')
+
+dvc1['TAGGING'].value_counts(normalize=True).plot(kind='bar')
+
+dvc_tbl = dvc1.groupby('TAGGING')['KPI_Cust_Id_2'].count().reset_index()
+dvc_tbl['Percentage'] = 100 * dvc_tbl['KPI_Cust_Id_2']  / dvc_tbl['KPI_Cust_Id_2'].sum()
+dvc_tbl
+
+"""
+Summary
+Of all active customers:
+        - Traditional: 63%
+        - Digital: 37%
+"""
+
+#
+#%%
+"""
+Part 2. Digital vs Traditional
+"""
+dvc1.groupby('borrowing2').TAGGING.value_counts().unstack().plot(kind='bar')
+dvc1.groupby('Team_BU').TAGGING.value_counts().unstack().plot(kind='bar')
+dvc1.groupby('Meta Industry').TAGGING.value_counts().unstack().plot(kind='bar')
+dvc1.groupby('NCA').TAGGING.value_counts().unstack().plot(kind='bar')
+
+#On proportion
+dvc1.groupby('borrowing2').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+dvc1.groupby('Team_BU').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+dvc1.groupby('Meta Industry').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+dvc1.groupby('NCA').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+
+
+dvc1.groupby('code_description').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+dvc1.groupby('code_description').TAGGING.value_counts().unstack().plot(kind='bar')
+
+"""
+Insight
+Not much on borrowing2, Team_BU and constitution code 
+For Meta Industry, Industry "fin & insurance activities" is the only one m. industry
+with count(digital) > count(traditional)
+"""
+
+#%%
+"""
+Part 3. Digital Indicators
+"""
+
+dvc3 = dvc1[(dvc1.TAGGING==1)]
+dvc4 = dvc1[(dvc1.TAGGING==0)]
+# Enquiry
+plt.scatter(dvc3.ideal_enquiries, dvc3.ndt_bizcare, alpha=0.5,color='r') #digital
+plt.scatter(dvc4.ideal_enquiries, dvc4.ndt_bizcare, alpha=0.5,color='b') #traditional
+# Fin transaction
+plt.scatter(dvc3.dt_financial, dvc3.ndt_financial, alpha=0.5,color='k')
+plt.scatter(dvc4.dt_financial, dvc4.ndt_financial, alpha=0.5,color='c')
+
+"""
+Summary
+The distribution is normal; no contradition to the D vs. T rules
+
+Insight
+D customers have max enquiries to over 50000. While T customers only have around 500 max.
+This however is based on the assumption that enquiry counting is fair.
+E.g. Can one traditional enquiry replaces multiple digital enquiries?
+However this makes sense in real life as digital enquiries costs customers less on labor/time.
+"""
+
+#%%
+"""
+Part 4. Show the determining factor of classifying D vs T
+"""
+len(dvc3.index)-dvc3.count()
+
+dvc3[(dvc3.dt_financial>dvc3.ndt_financial)&(dvc3.ideal_enquiries>dvc3.ndt_bizcare)].count()
+dvc3[(dvc3.dt_financial>dvc3.ndt_financial)&(dvc3.ideal_enquiries<=dvc3.ndt_bizcare)].count()
+dvc3[(dvc3.dt_financial<=dvc3.ndt_financial)&(dvc3.ideal_enquiries>dvc3.ndt_bizcare)].count()
+
+dvc3[(dvc3.dt_financial<=dvc3.ndt_financial)&(dvc3.ideal_enquiries<=dvc3.ndt_bizcare)].count()
+
+"""
+Summary
+Both rules triggered: 13959/31029 = 45%
+fin. transactions rule triggered: 1616/31029 = 5%
+enquiry rule triggered: 15454/31029 = 50%
+
+13959+15454+1616 = 31029
+"""
+
+#%%
+fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
+ax1 = dvc1['Meta Industry'].value_counts().plot(kind='bar')
+ax2 = dvc1['Team_BU'].value_counts().plot(kind='bar')
+
+
+
+
+
+#%% Plot other porportion bar charts using different filters
+
+#Booking
+dvc1.groupby('KPI_Booking').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+
+#cust_type
+dvc1.groupby('cust_type').TAGGING.value_counts(normalize=True).unstack().plot(kind='bar')
+
+dvc1.groupby('TAGGING').KPI_D_CA_AVG.plot()
+dvc1.groupby('TAGGING').KPI_D_CA_AVG.mean().plot(kind='bar')
+# follow up 
+
+dvc1.pivot(columns='TAGGING', values='KPI_D_CA_AVG').plot()
+
+dvc1.pivot(columns='TAGGING', values='HKD Annualized NetSales').plot()
+dvc1.pivot(columns='Team_BU', values='HKD Annualized NetSales').plot()
+
+dvc1.pivot(columns='Team_BU', values='KPI_D_CA_AVG').plot()
+
+#%%
+plt.scatter(dvc1.ideal_enquiries, dvc1.ndt_bizcare, alpha=0.5)
+plt.xlabel("ideal_enquiries", fontsize=10)
+plt.ylabel("dvc1.ndt_bizcare", fontsize=10)
+# Set the font size of the number lables on the axes
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=10)
+list(dvc1)
+
+#%%
+#define a df with 
+dvc2 = dvc1[(dvc1.ideal_enquiries != 0)|(dvc1.ndt_bizcare != 0)]
+plt.scatter(dvc2.ideal_enquiries, dvc2.ndt_bizcare, alpha=0.5,color='r')
+plt.xlabel("ideal_enquiries", fontsize=10)
+plt.ylabel("dvc1.ndt_bizcare", fontsize=10)
+
+dvc3 = dvc1[(dvc1.TAGGING==1)]
+dvc4 = dvc1[(dvc1.TAGGING==0)]
+plt.scatter(dvc3.ideal_enquiries, dvc3.ndt_bizcare, alpha=0.5,color='r')
+plt.scatter(dvc4.ideal_enquiries, dvc4.ndt_bizcare, alpha=0.5,color='b')
+colors = cm.rainbow(np.linspace(0, 1, len(ys)))
+for y, c in zip(ys, colors):
+    plt.scatter(x, y, color=c)
