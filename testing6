@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Aug  6 14:42:12 2018
+
+@author: timso
+"""
+"""
+#%%
+""" Libraries """
+# Active
+import pandas as pd
+import numpy as np
+import string
+import re
+
+import jellyfish
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+from collections import Counter # for stop_words()
+#%% Import Data
+
+#Import insurance company list
+xl = pd.ExcelFile("Brokers and Insurers list.xlsx")
+xl.sheet_names
+in_brokers = xl.parse('Insurance Brokers',header=None, names=['company'])
+in_companies = xl.parse('Insurance Companies',header=None, names=['company'])
+
+#stacking brokers and companies df
+in_co = pd.concat([in_companies, in_brokers],ignore_index=True)
+
+#Read sc_txn - specifically the cpty_name column
+sc_txn_raw = pd.read_csv('sc_txn.csv')
+sc_txn_raw.dropna(subset=["CPTY_NAME"], inplace=True)
+
+sc_txn = pd.DataFrame()
+sc_txn['party'] = pd.Series(sc_txn_raw["CPTY_NAME"].dropna().unique())
+
+#%%
+from fuzzymatch_function import *
+#%% data cleaning 1
+"""
+Messy list to match - sc_txn['party']
+key list - in_co['company']
+"""
+#Standard Parsing/Standardize
+
+sc_txn['party_c'] = standardize(sc_txn['party'])
+in_co['company_c'] = standardize(in_co['company'])
+
+#replace full "digit" string
+sc_txn['party_c'] = sc_txn['party_c'].str.replace('\d+', '')
+#.str.strip()
+sc_txn['party_c'] = sc_txn['party_c'].str.replace("\s+", " ")
+
+#%% data cleaning 2
+"""
+1. filter sc_txn
+    - party contains "ltd" (skip)
+    - >= 2 word
+2. jump below words
+    - 'ltd'
+    - 'co'
+    - 'hk'
+"""
+
+sc_txn = sc_txn[sc_txn['party_c'].str.contains(' ', na=False)].copy() #with space -> >1 word
+sc_txn['party_c'] =sc_txn['party_c'].str.replace(r'\bltd\b', '')  #ltd
+sc_txn['party_c'] =sc_txn['party_c'].str.replace(r'\bco\b', '')   #co
+sc_txn['party_c'] =sc_txn['party_c'].str.replace(r'\bhk\b', '')   #hk
+sc_txn['party_c'] = sc_txn['party_c'].str.replace("\s+", " ")
+sc_txn['party_c'] = sc_txn['party_c'].str.strip()
+sc_txn['party_c'] = pd.Series(sc_txn['party_c'].dropna().unique())
+sc_txn = sc_txn.reset_index(drop=True)
+
+in_co['company_c'] = in_co['company_c'].str.replace(r'\bltd\b', '')
+in_co['company_c'] = in_co['company_c'].str.replace(r'\bco\b', '')
+in_co['company_c'] = in_co['company_c'].str.replace(r'\bhk\b', '')
+in_co['company_c'] = in_co['company_c'].str.replace("\s+", " ")
+
+in_co['company_c'] = in_co['company_c'].str.strip()
+
+"""
+In total 384130 rows
+"""
+
+#%%
+#Matching
+input_list = sc_txn['party_c']
+key_list = in_co['company_c']
+clean_key = in_co['company']
+
+sc_txn['full_match'] = match.full_match(input_list, key_list, clean_key)
+
+#sc_txn.to_excel('sc_txn_T1.xlsx', index=False) # export before overnight running (8/6/2018)
+
+sc_txn['full_set_match'] = match.full_set_match(input_list, key_list, clean_key)
+sc_txn['subset_match'] = match.subset_match(input_list, key_list, clean_key)
+sc_txn['phonetic_subset_match'] = match.phonetic_subset_match(input_list, key_list, clean_key)
+sc_txn['fuzzy_match'] = match.fuzzy_match(input_list, key_list, clean_key, min_ratio=85)
+
+
+#%% Export sc_txn.csv for eyeball checking and manipulation
+sc_txn_wip = sc_txn[(sc_txn.iloc[:,[2,3,4,5,6]]!='No_matches').any(axis=1)].copy()
+sc_txn_wip['matched'] = sc_txn_wip['full_match']
+sc_txn_wip.to_excel('sc_txn_wip.xlsx', index=False)
+
+#%%
+
+sc_txn_key = pd.read_excel('sc_txn_key.xlsx')
+sc_txn_key = sc_txn[(sc_txn.iloc[:,[2,3,4,5,6]]!='No_matches').any(axis=1)].copy()
+#%% Extract sc_txn with matched rows
+
+sc_txn_key = sc_txn_key[sc_txn_key['matched']!='No_matches']
+for i in sc_txn_key['matched']:
+    print(i)
+    
+sc_txn_key['insurance_broker'] = np.where(sc_txn_key['matched'].isin(in_brokers.company), 1, 0)
+sc_txn_key['insurance_company'] = np.where(sc_txn_key['matched'].isin(in_companies.company), 1, 0)
+
+sc_txn_key = sc_txn_key[['party', 'matched','insurance_company','insurance_broker']].copy()
+
+sc_txn_raw.head()
+sc_ins_txn = pd.merge(sc_txn_raw, sc_txn_key, left_on='CPTY_NAME', right_on='party', how='inner')
+
+sc_ins_txn.to_excel('sc_ins_txn.xlsx', index=False)
